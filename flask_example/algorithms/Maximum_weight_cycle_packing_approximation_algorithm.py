@@ -1,14 +1,10 @@
 import doctest
 import logging
 
-import re
 import networkx as nx
-import hypernetx as hnx
-import matplotlib.pyplot as plt
 
 # logging.basicConfig(filemode="Logs.log", level=logging.INFO)
 # log = logging.getLogger()
-from hypernetx import Entity
 
 EPS = 1e-6
 
@@ -52,17 +48,18 @@ def Maximum_weight_cycle_packing_approximation_algorithm(graph: nx.DiGraph, k: i
     >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
     >>> Digraph.add_weighted_edges_from([(1,8,2),(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
     >>> print(Maximum_weight_cycle_packing_approximation_algorithm(Digraph, 3))
-    ['[5, 7, 6]', '[8, 2, 1]']
+    [(5, 7, 6), (8, 2, 1)]
     >>> Digraph =nx.DiGraph()
     >>> Digraph.add_nodes_from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
     >>> Digraph.add_weighted_edges_from([(1, 6, 11), (6, 1, 10), (1, 5, 3), (5, 1, 2), (8, 9, 11), (9, 8, 20), (3, 2, 6), (2, 6, 5), (6, 3, 8),(5, 7, 6), (7, 4, 11), (4, 5, 5), (10, 16, 1), (16, 11, 10), (11, 15, 3), (15, 11, 2), (18, 19, 11),(19, 18, 20), (13, 12, 6), (12, 16, 5), (16, 13, 8)])
     >>> print(Maximum_weight_cycle_packing_approximation_algorithm(Digraph, 2))
-    ['[1, 6]', '[11, 15]', '[18, 19]', '[8, 9]']
+    [(1, 6), (8, 9), (11, 15), (18, 19)]
     >>> Digraph=nx.DiGraph()
     >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
     >>> Digraph.add_weighted_edges_from([(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
     >>> print(Maximum_weight_cycle_packing_approximation_algorithm(Digraph, 2))
     []
+
 
     Notes
     -----------
@@ -82,40 +79,55 @@ def Maximum_weight_cycle_packing_approximation_algorithm(graph: nx.DiGraph, k: i
     if len(cycles) == 0:
         return []
 
-    logging.info("create hypergraph according to hypergraph's format of hypernetx library - "
-                 "https://pnnl.github.io/HyperNetX/build/classes/classes.html")
+    logging.info(
+        "create hypergraph according to hypergraph's format of hypernetx library - "
+        "https://pnnl.github.io/HyperNetX/build/classes/classes.html"
+        "{i,Entity{i,([nodesOfSingleHyperEdge]),"
+        "'weight'}}"
+    )
     buildHype = {}
     weights = {}
-    i = 0
-    for cycle in cycles:
-        if len(cycle) < 3:
-            weight = graph.get_edge_data(cycle[0], cycle[1])["weight"] + graph.get_edge_data(cycle[1], cycle[0])[
-                "weight"]
-        else:
-            weight = graph.get_edge_data(cycle[0], cycle[1])["weight"] + graph.get_edge_data(cycle[1], cycle[2])[
-                "weight"] + graph.get_edge_data(cycle[2], cycle[0])["weight"]
-        buildHype[i] = Entity(i, tuple(str(item) for item in cycle), weight=weight)
-        weights[i] = weight
-        i = i + 1
-    h = hnx.Hypergraph(buildHype)
 
-    # logging.info("draw hypergraph h")
-    # hnx.draw(h, edge_labels=weights)
-    # plt.title('HyperGraph')
-    # plt.show()
+    for i, cycle in enumerate(cycles):
+        if len(cycle) < 3:
+            weight = (
+                graph.get_edge_data(cycle[0], cycle[1])["weight"]
+                + graph.get_edge_data(cycle[1], cycle[0])["weight"]
+            )
+        else:
+            weight = (
+                graph.get_edge_data(cycle[0], cycle[1])["weight"]
+                + graph.get_edge_data(cycle[1], cycle[2])["weight"]
+                + graph.get_edge_data(cycle[2], cycle[0])["weight"]
+            )
+        buildHype[cycle] = weight
+        weights[i] = weight
 
     logging.info("create a new graph for maximum weight independent set algorithm")
     graphL = nx.Graph()
-    for e in h.edges:
-        if len(h.edge_neighbors(e)) == 0:
-            graphL.add_node(str(cycles[e]), weight=weights[e])
-        for i in h.edge_neighbors(e):
-            graphL.add_edge(str(cycles[e]), str(cycles[i]))
 
-    # logging.info("draw undirected graphL")
-    # nx.draw(graphL, pos=nx.spring_layout(graphL), font_size=12, with_labels=True)
-    # plt.title('graphL')
-    # plt.show()
+    for k, v in buildHype.items():
+        graphL.add_node(k, weight=v)
+
+    logging.info(
+        "create appearance of nodes that related to each node in the directed graph"
+    )
+    nodes = graph.nodes
+    temp = {}
+    for node in nodes:
+        temp2 = []
+        for edge in buildHype.keys():
+            if edge.count(node):
+                temp2.append(edge)
+        temp[node] = temp2
+
+    logging.info("add edges to undirected graph")
+    for k, v in temp.items():
+        if len(v) > 1:
+            for i in range(0, len(v)):
+                for j in range(i, len(v)):
+                    if i is not len(v):
+                        graphL.add_edge(v[i], v[j])
 
     logging.info("nodes and weights")
     pi = dict(zip(graphL.nodes(), (weights[i] for i in weights)))
@@ -126,6 +138,29 @@ def Maximum_weight_cycle_packing_approximation_algorithm(graph: nx.DiGraph, k: i
 
 
 def simple_cycles(graph, k):
+    """
+    >>> Digraph=nx.DiGraph()
+    >>> Digraph.add_nodes_from([1,2,3,5,6,7,8])
+    >>> Digraph.add_weighted_edges_from([(1,8,2),(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
+    >>> Ys=simple_cycles(Digraph,3)
+    >>> a=[y for y in Ys]
+    >>> print(a)
+    [[8, 2, 1], [8, 1, 3], [8, 1], [5, 7, 6]]
+    >>> Digraph =nx.DiGraph()
+    >>> Digraph.add_nodes_from([1,2,3,4])
+    >>> Digraph.add_weighted_edges_from([(2,1,3),(1,3,1),(3,2,2),(3,4,5),(4,3,9)])
+    >>> Ys=simple_cycles(Digraph,3)
+    >>> a=[y for y in Ys]
+    >>> print(a)
+    [[1, 3, 2], [3, 4]]
+    >>> graphEX3 = nx.DiGraph()
+    >>> graphEX3.add_nodes_from([10,11,12,13,14,15,16])
+    >>> Digraph.add_weighted_edges_from([(10,11,10),(11,12,5),(12,13,6),(13,10,4),(11,14,2),(14,16,3),(16,15,8),(15,14,6)])
+    >>> Ys=simple_cycles(Digraph,3)
+    >>> a=[y for y in Ys]
+    >>> print(a)
+    [[16, 15, 14], [1, 3, 2], [3, 4]]
+    """
     subG = type(graph)(graph.edges())
     ccs = list(nx.strongly_connected_components(subG))
     while ccs:
@@ -158,40 +193,39 @@ def simple_cycles(graph, k):
 
 
 def find_cycles_of_size_k(graph, k):
-    """finds relevent cycles according to chosen K
-       Parameters
-       -----------
-       :param graph : NetworkX DiGraph
-           Directed graph with weights
-       :param k : size of cycles (according to article - max size is 3 and min size is 2)
-       Returns
-       -----------
-       cycles: cycles on graph according to chosen K
-       Examples
-       -----------
-       >>> Digraph=nx.DiGraph()
-       >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
-       >>> Digraph.add_weighted_edges_from([(1,8,2),(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
-       >>> print(find_cycles_of_size_k(Digraph, 3))
-       [[8, 2, 1], [8, 1, 3], [8, 1], [5, 7, 6]]
-       >>> Digraph =nx.DiGraph()
-       >>> Digraph.add_nodes_from([1,2,3,4])
-       >>> Digraph.add_weighted_edges_from([(2,1,3),(1,3,1),(3,2,2),(3,4,5),(4,3,9)])
-       >>> print(find_cycles_of_size_k(Digraph, 2))
-       [[3, 4]]
-       >>> Digraph=nx.DiGraph()
-       >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
-       >>> Digraph.add_weighted_edges_from([(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
-       >>> print(find_cycles_of_size_k(Digraph, 2))
-       []
-       """
+    """
+    finds relevent cycles according to chosen K
+    Parameters
+    -----------
+    :param graph : NetworkX DiGraph
+        Directed graph with weights
+    +    :param k : size of cycles (according to article - max size is 3 and min size is 2)
+    Returns
+    -----------
+    cycles: cycles on graph according to chosen K
+    Examples
+    -----------
+    >>> Digraph=nx.DiGraph()
+    >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
+    >>> Digraph.add_weighted_edges_from([(1,8,2),(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
+    >>> print(find_cycles_of_size_k(Digraph, 3))
+    [(8, 2, 1), (8, 1, 3), (8, 1), (5, 7, 6)]
+    >>> Digraph =nx.DiGraph()
+    >>> Digraph.add_nodes_from([1,2,3,4])
+    >>> Digraph.add_weighted_edges_from([(2,1,3),(1,3,1),(3,2,2),(3,4,5),(4,3,9)])
+    >>> print(find_cycles_of_size_k(Digraph, 2))
+    [(3, 4)]
+    >>> Digraph=nx.DiGraph()
+    >>> Digraph.add_nodes_from([1,2,3,4,5,6,7,8])
+    >>> Digraph.add_weighted_edges_from([(8,1,4),(2,1,5),(1,3,4),(3,8,2),(8,2,3),(8,5,4),(5,7,3),(7,6,2),(6,5,4)])
+    >>> print(find_cycles_of_size_k(Digraph, 2))
+    []
+    """
     sc = simple_cycles(graph, k)
     cycles = []
     for cycle in sc:
-        if len(cycle) == k and k == 2:
-            cycles.append(cycle)
-        if (len(cycle) == k or len(cycle) == k - 1) and k == 3:
-            cycles.append(cycle)
+        if 1 < len(cycle) <= k:
+            cycles.append(tuple(cycle))
     return cycles
 
 
@@ -201,7 +235,7 @@ https://github.com/pchervi/Graph-Coloring/blob/295f7bce72885eab05ff50adea746585a
 
 
 def MWIS(graph, pi, b_score=0):
-    """ compute mawimum weighted independent set (recursively) using python
+    """compute mawimum weighted independent set (recursively) using python
     networkx package. Input items are:
     :param graph, a networkx graph
     :param pi, a dictionary of dual values attached to node (primal constraints)
@@ -250,7 +284,7 @@ def MWIS(graph, pi, b_score=0):
     global best_score
     graph_copy = graph.copy()
     # mwis weight is stored as a 'score' graph attribute
-    graph_copy.graph['score'] = 0
+    graph_copy.graph["score"] = 0
     best_score = b_score
 
     def get_mwis(G):
@@ -265,7 +299,7 @@ def MWIS(graph, pi, b_score=0):
         # score stores the best score along the path explored so far
         key = tuple(sorted(G.nodes()))
         ub = sum(pi[n] for n in G.nodes())
-        score = G.graph['score']
+        score = G.graph["score"]
         # if graph is composed of singletons, leave now
         if G.number_of_edges == 0:
             if score + ub > best_score + EPS:
@@ -288,7 +322,7 @@ def MWIS(graph, pi, b_score=0):
         if Gh:
             ubh = ub - pi_neighbors - pi_chosen
             if score + pi_chosen + ubh > best_score + EPS:
-                Gh.graph['score'] += pi_chosen
+                Gh.graph["score"] += pi_chosen
                 mwis_set_h, mwis_weight_h = get_mwis(Gh)
             del Gh
         mwis_set_h += (node_chosen,)
@@ -318,12 +352,5 @@ def MWIS(graph, pi, b_score=0):
     return get_mwis(graph_copy)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(doctest.testmod())
-    # graphEX3 = nx.DiGraph()
-    # graphEX3.add_nodes_from([1, 2, 3, 4, 5, 6, 7, 8, 9])
-    # graphEX3.add_weighted_edges_from(
-    #     [(1, 6, 11), (6, 1, 10), (1, 5, 3), (5, 1, 2), (8, 9, 11), (9, 8, 20), (3, 2, 6), (2, 6, 5), (6, 3, 8),
-    #      (5, 7, 6), (7, 4, 11), (4, 5, 5), (10, 16, 1), (16, 11, 10), (11, 15, 3), (15, 11, 2), (18, 19, 11),
-    #      (19, 18, 20), (13, 12, 6), (12, 16, 5), (16, 13, 8)])
-    # print(Maximum_weight_cycle_packing_approximation_algorithm(graphEX3, 2))
